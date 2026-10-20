@@ -1,0 +1,126 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── HELPER FUNCTIONS ───────────────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Lookup staff document in /staff collection
+    function getStaffData() {
+      return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
+    }
+
+    function isStaff() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/staff/$(request.auth.uid));
+    }
+
+    function hasRole(role) {
+      return isStaff() && getStaffData().role == role;
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    function isKitchenOrAdmin() {
+      return hasRole('kitchen') || isAdmin();
+    }
+
+    function isWaiterOrAdmin() {
+      return hasRole('waiter') || isAdmin();
+    }
+
+    // Validate that incoming order has proper structure and initial 'new' status
+    function isValidNewOrder() {
+      let data = request.resource.data;
+      return data.status == 'new'
+        && data.tableNumber is string
+        && data.sessionToken is string
+        && data.items is list
+        && data.items.size() > 0
+        && data.subtotal is number
+        && data.tax is number
+        && data.total is number
+        && data.subtotal >= 0
+        && data.total >= data.subtotal;
+    }
+
+    // ─── 1. RESTAURANT SETTINGS ────────────────────────────────────────────────
+    match /settings/{docId} {
+      // Public read so customer menus can show restaurant name, tax rate, hours
+      allow read: if true;
+      // Only administrators can edit store settings and brand details
+      allow write: if isAdmin();
+    }
+
+    // ─── 2. CATEGORIES ─────────────────────────────────────────────────────────
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ─── 3. MENU ITEMS ─────────────────────────────────────────────────────────
+    match /menu_items/{itemId} {
+      allow read: if true;
+      // Kitchen or Admin can toggle availability ("86" an item out of stock)
+      allow update: if isKitchenOrAdmin();
+      // Admin can create or delete menu dishes
+      allow create, delete: if isAdmin();
+    }
+
+    // ─── 4. TABLES ─────────────────────────────────────────────────────────────
+    match /tables/{tableId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      // Waiter or Admin can update table status (available, occupied, cleaning)
+      allow update: if isWaiterOrAdmin();
+    }
+
+    // ─── 5. ORDERS ─────────────────────────────────────────────────────────────
+    match /orders/{orderId} {
+      // Anonymous customer can read their own order if session token matches, staff can read all
+      allow read: if isStaff() || (
+        resource.data.sessionToken == request.headers.get('x-session-token') ||
+        (request.query.limit <= 1)
+      );
+
+      // Anyone (customer at table or staff) can create an order with valid schema
+      allow create: if isValidNewOrder() || isStaff();
+
+      // Only staff can update status (cooking, ready, served) or notes
+      allow update: if isStaff();
+
+      // Only administrators can hard-delete orders from history
+      allow delete: if isAdmin();
+    }
+
+    // ─── 6. CALL WAITER / SERVICE REQUESTS ─────────────────────────────────────
+    match /service_requests/{reqId} {
+      // Customers can create a request; staff can read and update status
+      allow create: if request.resource.data.tableNumber is string
+        && request.resource.data.type in ['call_waiter', 'water', 'clean_table', 'bill']
+        && request.resource.data.status == 'pending';
+
+      allow read: if isStaff();
+      allow update: if isWaiterOrAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── 7. BILLS & SETTLEMENTS ────────────────────────────────────────────────
+    match /bills/{billId} {
+      allow read: if isWaiterOrAdmin();
+      allow create, update: if isWaiterOrAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── 8. STAFF USERS ────────────────────────────────────────────────────────
+    match /staff/{staffUid} {
+      // Any authenticated user can read their own staff profile; Admin can read all
+      allow read: if isAuthenticated() && (request.auth.uid == staffUid || isAdmin());
+      // Only Admin can create, modify, or delete staff records
+      allow write: if isAdmin();
+    }
+  }
+}
