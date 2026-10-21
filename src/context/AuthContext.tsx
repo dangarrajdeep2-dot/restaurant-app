@@ -32,6 +32,24 @@ const MOCK_STAFF: Record<string, StaffUser> = {
     role: 'admin',
     isActive: true,
   },
+  'admin': {
+    uid: 'admin-main',
+    email: 'adminmain23@gmail.com',
+    username: 'admin',
+    password: 'royalchef200',
+    name: 'Master Admin',
+    role: 'admin',
+    isActive: true,
+  },
+  'adminmain23': {
+    uid: 'admin-main',
+    email: 'adminmain23@gmail.com',
+    username: 'admin',
+    password: 'royalchef200',
+    name: 'Master Admin',
+    role: 'admin',
+    isActive: true,
+  },
   'admin@royalsaffron.in': {
     uid: 'admin-1',
     email: 'admin@royalsaffron.in',
@@ -59,7 +77,25 @@ const MOCK_STAFF: Record<string, StaffUser> = {
     role: 'kitchen',
     isActive: true,
   },
+  'cooker': {
+    uid: 'kitchen-1',
+    email: 'cooker@royalsaffron.in',
+    username: 'cooker',
+    password: 'cooker123',
+    name: 'Chef Amar',
+    role: 'kitchen',
+    isActive: true,
+  },
   'waiter@royalsaffron.in': {
+    uid: 'waiter-1',
+    email: 'waiter@royalsaffron.in',
+    username: 'waiter',
+    password: 'waiter123',
+    name: 'Priya Singh',
+    role: 'waiter',
+    isActive: true,
+  },
+  'waiter': {
     uid: 'waiter-1',
     email: 'waiter@royalsaffron.in',
     username: 'waiter',
@@ -74,36 +110,102 @@ const USE_MOCK_AUTH =
   import.meta.env.VITE_FIREBASE_PROJECT_ID === undefined ||
   import.meta.env.VITE_FIREBASE_PROJECT_ID === 'demo-project';
 
+// ─── 3-Hour Persistent Session Storage Helpers ──────────────────────────────
+const SESSION_STORAGE_KEY = 'sg_staff_persistent_session_v1';
+const SESSION_DURATION_MS = 3 * 60 * 60 * 1000; // 3 Hours session
+
+interface StoredStaffSession {
+  user: StaffUser;
+  expiresAt: number;
+}
+
+function saveStaffSession(staff: StaffUser) {
+  try {
+    const session: StoredStaffSession = {
+      user: staff,
+      expiresAt: Date.now() + SESSION_DURATION_MS,
+    };
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    sessionStorage.setItem('mockStaff', JSON.stringify(staff));
+  } catch (e) {
+    console.error('Failed to save staff session', e);
+  }
+}
+
+function getStoredStaffSession(): StaffUser | null {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (raw) {
+      const session: StoredStaffSession = JSON.parse(raw);
+      if (session && session.user && session.expiresAt && Date.now() < session.expiresAt) {
+        // Active and valid session within 3 hours! Slide expiration window on active use
+        session.expiresAt = Date.now() + SESSION_DURATION_MS;
+        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+        sessionStorage.setItem('mockStaff', JSON.stringify(session.user));
+        return session.user;
+      } else {
+        // Expired after 3 hours
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+        sessionStorage.removeItem('mockStaff');
+        return null;
+      }
+    }
+    // Fallback check in sessionStorage
+    const fallbackRaw = sessionStorage.getItem('mockStaff');
+    if (fallbackRaw) {
+      const fallbackUser: StaffUser = JSON.parse(fallbackRaw);
+      saveStaffSession(fallbackUser);
+      return fallbackUser;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function clearStaffSession() {
+  try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    sessionStorage.removeItem('mockStaff');
+  } catch {
+    /* ignore */
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<StaffUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // 1. Check for persistent 3-hour session
+    const savedSession = getStoredStaffSession();
+    if (savedSession) {
+      setUser(savedSession);
+    }
+
     if (USE_MOCK_AUTH) {
-      // Restore mock session from storage
-      const saved = sessionStorage.getItem('mockStaff');
-      if (saved) {
-        try {
-          setUser(JSON.parse(saved));
-        } catch {
-          /* ignore */
-        }
-      }
       setLoading(false);
       return;
     }
 
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
-        setUser(null);
+        const localUser = getStoredStaffSession();
+        if (localUser) {
+          setUser(localUser);
+        } else {
+          setUser(null);
+        }
         setLoading(false);
         return;
       }
       try {
         const snap = await getDoc(doc(db, 'staff', firebaseUser.uid));
         if (snap.exists()) {
-          setUser(snap.data() as StaffUser);
+          const u = snap.data() as StaffUser;
+          saveStaffSession(u);
+          setUser(u);
         } else {
           // If staff document does not exist yet, infer role from email
           const email = firebaseUser.email || '';
@@ -127,6 +229,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             isActive: true,
           };
           await setDoc(doc(db, 'staff', firebaseUser.uid), fallbackStaff, { merge: true });
+          saveStaffSession(fallbackStaff);
           setUser(fallbackStaff);
         }
       } catch {
@@ -147,7 +250,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       // 1. Master Admin credentials configured by Owner
       if (
-        (cleanIdentifier === 'adminmain23@gmail.com' || cleanIdentifier === 'adminmain23') &&
+        (cleanIdentifier === 'adminmain23@gmail.com' ||
+          cleanIdentifier === 'adminmain23' ||
+          cleanIdentifier === 'admin') &&
         password === 'royalchef200'
       ) {
         const masterAdmin: StaffUser = {
@@ -159,8 +264,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: 'admin',
           isActive: true,
         };
+        saveStaffSession(masterAdmin);
         setUser(masterAdmin);
-        sessionStorage.setItem('mockStaff', JSON.stringify(masterAdmin));
         return masterAdmin;
       }
 
@@ -174,9 +279,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (staffMember) {
         const expected = staffMember.password || (staffMember.role === 'admin' ? 'royalchef200' : 'password123');
-        if (password === expected) {
+        if (password === expected || (staffMember.role === 'kitchen' && password === 'cooker123') || (staffMember.role === 'waiter' && password === 'waiter123')) {
+          saveStaffSession(staffMember);
           setUser(staffMember);
-          sessionStorage.setItem('mockStaff', JSON.stringify(staffMember));
           return staffMember;
         }
         throw new Error('Incorrect password. Please verify with the Administrator.');
@@ -184,7 +289,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (USE_MOCK_AUTH) {
         let staff = MOCK_STAFF[cleanIdentifier];
-        if (!staff && (password === 'password123' || password === 'royalchef200')) {
+        if (!staff && (password === 'password123' || password === 'royalchef200' || password === 'cooker123' || password === 'waiter123')) {
           const role: StaffRole = cleanIdentifier.includes('admin')
             ? 'admin'
             : cleanIdentifier.includes('kitchen') || cleanIdentifier.includes('cook')
@@ -192,18 +297,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             : 'waiter';
           staff = {
             uid: `user-${Date.now()}`,
-            email: cleanIdentifier,
-            username: cleanIdentifier.split('@')[0],
-            name: role === 'admin' ? 'Admin Manager' : role === 'kitchen' ? 'Head Chef' : 'Staff Waiter',
+            email: cleanIdentifier.includes('@') ? cleanIdentifier : `${cleanIdentifier}@royalsaffron.in`,
+            username: cleanIdentifier.replace('@royalsaffron.in', ''),
+            name: role === 'admin' ? 'Master Admin' : role === 'kitchen' ? 'Head Chef' : 'Staff Waiter',
             role,
             isActive: true,
           };
         }
         if (staff) {
           const expected = staff.role === 'admin' ? 'royalchef200' : (staff.password || 'password123');
-          if (password === expected || password === 'password123') {
+          if (password === expected || password === 'password123' || password === 'cooker123' || password === 'waiter123') {
+            saveStaffSession(staff);
             setUser(staff);
-            sessionStorage.setItem('mockStaff', JSON.stringify(staff));
             return staff;
           }
         }
@@ -258,11 +363,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           isActive: true,
         };
         await setDoc(doc(db, 'staff', cred.user.uid), newStaff);
+        saveStaffSession(newStaff);
         setUser(newStaff);
         return newStaff;
       }
 
       const activeStaff = snap.data() as StaffUser;
+      saveStaffSession(activeStaff);
       setUser(activeStaff);
       return activeStaff;
     } catch (err) {
@@ -273,8 +380,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    clearStaffSession();
     if (USE_MOCK_AUTH) {
-      sessionStorage.removeItem('mockStaff');
       setUser(null);
       return;
     }

@@ -1,7 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Eye, EyeOff, ChefHat, Sparkles, ArrowRight, ShieldCheck } from 'lucide-react';
+import {
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  ChefHat,
+  Sparkles,
+  ArrowRight,
+  ShieldCheck,
+  Users,
+  Crown,
+  Clock,
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { restaurantConfig } from '../../lib/mockData';
 
@@ -10,8 +22,17 @@ export default function StaffLoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { login, error } = useAuth();
+  const { user, login, error } = useAuth();
   const navigate = useNavigate();
+
+  // If already authenticated and session is active within 3 hours, redirect immediately
+  useEffect(() => {
+    if (user) {
+      if (user.role === 'admin') navigate('/admin', { replace: true });
+      else if (user.role === 'kitchen') navigate('/kitchen', { replace: true });
+      else navigate('/waiter', { replace: true });
+    }
+  }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,6 +42,22 @@ export default function StaffLoginPage() {
       if (loggedUser.role === 'admin') navigate('/admin');
       else if (loggedUser.role === 'kitchen') navigate('/kitchen');
       else navigate('/waiter');
+    } catch {
+      /* error displayed from context */
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuickLogin = async (id: string, pass: string) => {
+    setEmail(id);
+    setPassword(pass);
+    setLoading(true);
+    try {
+      const loggedUser = await login(id, pass);
+      if (loggedUser.role === 'admin') navigate('/admin', { replace: true });
+      else if (loggedUser.role === 'kitchen') navigate('/kitchen', { replace: true });
+      else navigate('/waiter', { replace: true });
     } catch {
       /* error displayed from context */
     } finally {
@@ -134,11 +171,78 @@ export default function StaffLoginPage() {
             </button>
           </form>
 
+          {/* ── Quick Role Direct Login Options ── */}
+          <div className="mt-5 pt-4 border-t border-white/10">
+            <div className="flex items-center justify-between mb-3 px-0.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3 text-orange-400" />
+                Quick Station Login
+              </span>
+              <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                3-Hr Stay Logged In
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {/* Waiter Option */}
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => handleQuickLogin('waiter', 'waiter123')}
+                className="p-2.5 rounded-2xl bg-gradient-to-b from-[#161a22] to-[#0e1117] border border-blue-500/25 hover:border-blue-400/60 hover:bg-blue-500/10 transition-all flex flex-col items-center text-center group active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg hover:shadow-blue-500/10"
+              >
+                <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 group-hover:scale-110 group-hover:bg-blue-500/25 transition-all mb-1.5">
+                  <Users className="h-4.5 w-4.5" />
+                </div>
+                <span className="text-xs font-bold text-white group-hover:text-blue-300">Waiter</span>
+                <span className="text-[10px] text-slate-400">Floor & Tables</span>
+                <span className="mt-1.5 text-[9px] font-bold text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded border border-blue-500/30">
+                  Tap to Enter
+                </span>
+              </button>
+
+              {/* Cooker / Staff Option */}
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => handleQuickLogin('cooker', 'cooker123')}
+                className="p-2.5 rounded-2xl bg-gradient-to-b from-[#161a22] to-[#0e1117] border border-amber-500/25 hover:border-amber-400/60 hover:bg-amber-500/10 transition-all flex flex-col items-center text-center group active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg hover:shadow-amber-500/10"
+              >
+                <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-110 group-hover:bg-amber-500/25 transition-all mb-1.5">
+                  <ChefHat className="h-4.5 w-4.5" />
+                </div>
+                <span className="text-xs font-bold text-white group-hover:text-amber-300">Cooker</span>
+                <span className="text-[10px] text-slate-400">Kitchen KDS</span>
+                <span className="mt-1.5 text-[9px] font-bold text-amber-300 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30">
+                  Tap to Enter
+                </span>
+              </button>
+
+              {/* Admin Option */}
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => handleQuickLogin('adminmain23@gmail.com', 'royalchef200')}
+                className="p-2.5 rounded-2xl bg-gradient-to-b from-[#161a22] to-[#0e1117] border border-purple-500/25 hover:border-purple-400/60 hover:bg-purple-500/10 transition-all flex flex-col items-center text-center group active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg hover:shadow-purple-500/10"
+              >
+                <div className="w-9 h-9 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 group-hover:scale-110 group-hover:bg-purple-500/25 transition-all mb-1.5">
+                  <Crown className="h-4.5 w-4.5" />
+                </div>
+                <span className="text-xs font-bold text-white group-hover:text-purple-300">Admin</span>
+                <span className="text-[10px] text-slate-400">Management</span>
+                <span className="mt-1.5 text-[9px] font-bold text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded border border-purple-500/30">
+                  Tap to Enter
+                </span>
+              </button>
+            </div>
+          </div>
+
           {/* Security footnote */}
           <div className="mt-5 pt-3 border-t border-white/5 text-center">
             <p className="text-[11px] text-slate-500 flex items-center justify-center gap-1.5 font-medium">
               <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-              <span>Encrypted Multi-Device Terminal Session</span>
+              <span>Multi-Device Terminal • Auto-Saved Session</span>
             </p>
           </div>
         </div>
